@@ -1,0 +1,15 @@
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok";
+    }
+
+    location /api/ {
+        proxy_pass ${API_URL}/;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+}

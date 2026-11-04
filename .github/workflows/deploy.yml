@@ -1,0 +1,61 @@
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, web, ingestor]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/cells-${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/cells-${{ matrix.service }}:${{ github.sha }}
+
+  deploy:
+    needs: images
+    if: vars.AZURE_READY == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Actualizar contenedores
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          az containerapp update -g "$RG" -n ca-api --image "$REGISTRY/cells-api:$TAG"
+          az containerapp update -g "$RG" -n ca-web --image "$REGISTRY/cells-web:$TAG"
+          az containerapp job update -g "$RG" -n job-ingestor --image "$REGISTRY/cells-ingestor:$TAG"
+      - uses: azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTION_APP }}
+          package: functions/downloader
+          sku: flexconsumption
+          remote-build: true

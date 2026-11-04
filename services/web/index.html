@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa de celdas</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    header { padding: 12px 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p { margin: 0; color: #444; }
+    #map { height: calc(100vh - 110px); }
+    footer { padding: 8px 16px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Mapa de celdas de Colombia</h1>
+    <p id="status">Haz clic en el mapa para ver las celdas en un radio de 2 km.</p>
+  </header>
+  <div id="map"></div>
+  <footer>
+    Las ubicaciones son estimadas, no torres confirmadas.
+    Cell tower data from <a href="https://opencellid.org">OpenCellID</a>,
+    licensed under <a rel="license" href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.
+  </footer>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([4.65, -74.08], 11);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    const layer = L.layerGroup().addTo(map);
+    const status = document.getElementById("status");
+
+    map.on("click", async ({ latlng }) => {
+      status.textContent = "Buscando...";
+      layer.clearLayers();
+      const params = new URLSearchParams({ lat: latlng.lat, lon: latlng.lng, radius_m: 2000 });
+      try {
+        const response = await fetch(`/api/v1/cells/nearby?${params}`);
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        data.cells.forEach(c => L.circleMarker([c.lat, c.lon], { radius: 5 })
+          .bindPopup(`${c.radio} · red ${c.net} · alcance ${c.range_m} m`).addTo(layer));
+        status.textContent = `${data.count} celdas encontradas.`;
+      } catch {
+        status.textContent = "La API no respondió. Intenta otra vez.";
+      }
+    });
+  </script>
+</body>
+</html>
